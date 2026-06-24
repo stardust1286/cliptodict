@@ -1,19 +1,53 @@
+import { installDictionary } from '../src/lib/dict/install';
+import { getInstallStatus, setInstallStatus } from '../src/lib/install-status';
+
 export default defineBackground(() => {
   console.log('[ClipToDict] background service worker started');
 
-  // Listen for extension install / update
+  // ── Dictionary install on first install ──────────────────────────────────
   chrome.runtime.onInstalled.addListener((details) => {
     if (details.reason === 'install') {
-      console.log('[ClipToDict] First install — will trigger dictionary data download (Issue #2)');
+      console.log('[ClipToDict] First install — starting dictionary data download');
+      installDictionary().catch((err) => {
+        console.error('[ClipToDict] installDictionary failed:', err);
+      });
     }
   });
 
-  // Relay lookup messages from content scripts (Issue #6 will fill this in)
+  // ── Also run install on service worker startup in case it was interrupted ─
+  // (Service workers can be killed mid-install; this resumes if stores are empty.)
+  getInstallStatus().then((status) => {
+    if (status.phase !== 'done') {
+      console.log('[ClipToDict] Install not complete (phase:', status.phase, '), resuming…');
+      installDictionary().catch((err) => {
+        console.error('[ClipToDict] installDictionary resume failed:', err);
+      });
+    }
+  });
+
+  // ── Message relay ─────────────────────────────────────────────────────────
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message.type === 'PING') {
       sendResponse({ type: 'PONG' });
+      return false;
     }
-    // Returning true keeps the channel open for async responses
+
+    if (message.type === 'GET_INSTALL_STATUS') {
+      getInstallStatus().then((status) => sendResponse(status));
+      return true; // keep channel open for async response
+    }
+
+    if (message.type === 'RETRY_INSTALL') {
+      setInstallStatus({ phase: 'idle' }).then(() => {
+        installDictionary().catch((err) => {
+          console.error('[ClipToDict] Retry install failed:', err);
+        });
+        sendResponse({ ok: true });
+      });
+      return true;
+    }
+
+    // Future message types (Issues #6+) will be handled here
     return true;
   });
 });

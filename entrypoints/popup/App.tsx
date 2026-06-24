@@ -1,9 +1,92 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import {
+  getInstallStatus,
+  onInstallStatusChange,
+  type InstallStatus,
+  type InstallPhase,
+} from '../../src/lib/install-status';
 
 type Tab = 'deck' | 'settings';
 
+// ─── Phase label helpers ──────────────────────────────────────────────────────
+
+function phaseLabel(phase: InstallPhase): string {
+  switch (phase) {
+    case 'downloading-jmdict': return 'Downloading dictionary…';
+    case 'indexing-jmdict':    return 'Indexing dictionary…';
+    case 'downloading-pitch':  return 'Downloading pitch accent data…';
+    case 'indexing-pitch':     return 'Indexing pitch accent data…';
+    case 'error':              return 'Install failed';
+    default:                   return 'Setting up…';
+  }
+}
+
+// ─── Install progress banner ──────────────────────────────────────────────────
+
+function InstallBanner({ status, onRetry }: { status: InstallStatus; onRetry: () => void }) {
+  if (status.phase === 'done') return null;
+
+  const isError = status.phase === 'error';
+  const hasProgress = typeof status.progress === 'number';
+
+  return (
+    <div
+      className={`px-4 py-3 text-xs flex flex-col gap-1 ${
+        isError ? 'bg-red-50 text-red-700' : 'bg-indigo-50 text-indigo-700'
+      }`}
+    >
+      <div className="flex items-center justify-between">
+        <span className="font-medium">{phaseLabel(status.phase)}</span>
+        {isError && (
+          <button
+            onClick={onRetry}
+            className="text-xs underline text-red-600 hover:text-red-800"
+          >
+            Retry
+          </button>
+        )}
+      </div>
+
+      {isError && status.error && (
+        <p className="text-red-500 truncate" title={status.error}>
+          {status.error}
+        </p>
+      )}
+
+      {!isError && hasProgress && (
+        <div className="w-full bg-indigo-100 rounded-full h-1.5 overflow-hidden">
+          <div
+            className="bg-indigo-500 h-full rounded-full transition-all duration-200"
+            style={{ width: `${status.progress}%` }}
+          />
+        </div>
+      )}
+
+      {!isError && !hasProgress && (
+        <div className="w-full bg-indigo-100 rounded-full h-1.5 overflow-hidden">
+          <div className="bg-indigo-400 h-full rounded-full animate-pulse w-1/2" />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Main App ─────────────────────────────────────────────────────────────────
+
 export default function App() {
   const [tab, setTab] = useState<Tab>('deck');
+  const [installStatus, setInstallStatusState] = useState<InstallStatus>({ phase: 'idle' });
+
+  // Load initial status and subscribe to changes
+  useEffect(() => {
+    getInstallStatus().then(setInstallStatusState);
+    const unsubscribe = onInstallStatusChange(setInstallStatusState);
+    return unsubscribe;
+  }, []);
+
+  function handleRetry() {
+    chrome.runtime.sendMessage({ type: 'RETRY_INSTALL' });
+  }
 
   return (
     <div className="flex flex-col h-full bg-white text-gray-900">
@@ -37,10 +120,13 @@ export default function App() {
         </nav>
       </header>
 
+      {/* Install progress banner (hidden when done) */}
+      <InstallBanner status={installStatus} onRetry={handleRetry} />
+
       {/* Content */}
       <main className="flex-1 overflow-y-auto p-4">
         {tab === 'deck' ? (
-          <DeckPlaceholder />
+          <DeckPlaceholder installing={installStatus.phase !== 'done'} />
         ) : (
           <SettingsPlaceholder />
         )}
@@ -49,14 +135,20 @@ export default function App() {
   );
 }
 
-function DeckPlaceholder() {
+function DeckPlaceholder({ installing }: { installing: boolean }) {
   return (
     <div className="flex flex-col items-center justify-center h-full gap-3 text-gray-400 py-12">
       <div className="text-4xl">📖</div>
       <p className="text-sm font-medium">Your deck is empty</p>
-      <p className="text-xs text-center max-w-[200px]">
-        Select Japanese text on any webpage to look it up and save cards here.
-      </p>
+      {installing ? (
+        <p className="text-xs text-center max-w-[200px] text-indigo-400">
+          Setting up dictionary data — this only happens once.
+        </p>
+      ) : (
+        <p className="text-xs text-center max-w-[200px]">
+          Select Japanese text on any webpage to look it up and save cards here.
+        </p>
+      )}
     </div>
   );
 }
