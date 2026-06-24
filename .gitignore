@@ -1,0 +1,7 @@
+node_modules/
+.wxt/
+dist/
+.output/
+*.zip
+pnpm-debug.log*
+.claude/
