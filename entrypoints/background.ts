@@ -1,6 +1,7 @@
 import { installDictionary } from '../src/lib/dict/install';
 import { getInstallStatus, setInstallStatus } from '../src/lib/install-status';
 import { lookup } from '../src/lib/lookup';
+import { handleCaptureAndLookup } from '../src/lib/screen-clip-background';
 
 export default defineBackground(() => {
   console.log('[ClipToDict] background service worker started');
@@ -27,7 +28,7 @@ export default defineBackground(() => {
   });
 
   // Message relay
-  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'PING') {
       sendResponse({ type: 'PONG' });
       return false;
@@ -61,7 +62,15 @@ export default defineBackground(() => {
       return true;
     }
 
-    // Future message types will be handled here
+    if (message.type === 'CAPTURE_AND_LOOKUP') {
+      handleCaptureAndLookup(
+        message as { type: 'CAPTURE_AND_LOOKUP'; rect: { x: number; y: number; width: number; height: number } },
+        sender,
+        sendResponse,
+      );
+      return true;
+    }
+
     return true;
   });
 
