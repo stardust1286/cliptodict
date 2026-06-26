@@ -4,7 +4,7 @@ import { getInstallStatus, setInstallStatus } from '../src/lib/install-status';
 export default defineBackground(() => {
   console.log('[ClipToDict] background service worker started');
 
-  // ── Dictionary install on first install ──────────────────────────────────
+  // Dictionary install on first install
   chrome.runtime.onInstalled.addListener((details) => {
     if (details.reason === 'install') {
       console.log('[ClipToDict] First install — starting dictionary data download');
@@ -14,18 +14,18 @@ export default defineBackground(() => {
     }
   });
 
-  // ── Also run install on service worker startup in case it was interrupted ─
+  // Also run install on service worker startup in case it was interrupted.
   // (Service workers can be killed mid-install; this resumes if stores are empty.)
   getInstallStatus().then((status) => {
     if (status.phase !== 'done') {
-      console.log('[ClipToDict] Install not complete (phase:', status.phase, '), resuming…');
+      console.log('[ClipToDict] Install not complete (phase:', status.phase, '), resuming...');
       installDictionary().catch((err) => {
         console.error('[ClipToDict] installDictionary resume failed:', err);
       });
     }
   });
 
-  // ── Message relay ─────────────────────────────────────────────────────────
+  // Message relay
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message.type === 'PING') {
       sendResponse({ type: 'PONG' });
@@ -34,7 +34,7 @@ export default defineBackground(() => {
 
     if (message.type === 'GET_INSTALL_STATUS') {
       getInstallStatus().then((status) => sendResponse(status));
-      return true; // keep channel open for async response
+      return true;
     }
 
     if (message.type === 'RETRY_INSTALL') {

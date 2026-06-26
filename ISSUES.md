@@ -56,22 +56,29 @@ Each issue is independently implementable. Start a fresh session per issue, pass
 
 ## Issue #4: LLM Integration (Translation + Definition)
 
-**Goal:** Given a word or sentence and a user API key, return LLM-powered fields via Groq or OpenRouter.
+**Goal:** Given a word or sentence and a user API key, return LLM-powered fields. Provider is auto-detected from the key — no configuration needed from the user.
 
-**Tasks:**
-- `src/lib/llm.ts` — `callLLM(apiKey: string, prompt: string): Promise<string>`
-  - Tries Groq first (`api.groq.com/openai/v1`) with `qwen-qwen3-32b` or equivalent
-  - Falls back to OpenRouter if Groq fails
-  - Uses OpenAI-compatible chat completions API
-- `src/lib/lookup-llm.ts`:
-  - `getLlmWordData(word: string, reading: string, apiKey: string): Promise<{ zhTranslation, jaDefinition, conjugations }>`
-  - `getLlmSentenceData(sentence: string, apiKey: string): Promise<{ sentenceTranslation, keyVocabulary }>`
-  - `getOcrText(imageDataUrl: string, apiKey: string): Promise<string>`
-- Prompt engineering: output structured JSON, parse and validate response
-- Error handling: timeout (10s), rate limit (429), invalid key (401)
-- Integration test (manual): given a real key, `getLlmWordData('食べる', 'たべる', key)` returns valid structured data
+**Supported providers (auto-detected by key prefix):**
+| Prefix | Provider | Notes |
+|---|---|---|
+| `gsk_` | Groq | Free tier |
+| `AIzaSy` / `AQ.` | Google AI Studio | Free tier; both key formats supported |
+| `sk-or-` | OpenRouter | Marketplace |
 
-**Done when:** All three LLM functions return correct structured data with a real API key; error cases handled gracefully.
+**Implemented files:**
+- `src/lib/llm.ts`
+  - `callLLM(apiKey, prompt)` — text completion
+  - `callVisionLLM(apiKey, prompt, imageDataUrl)` — vision/OCR completion
+  - `detectProvider(apiKey)` — returns `'groq' | 'google' | 'openrouter' | null`
+  - Error classes: `LlmAuthError`, `LlmRateLimitError`, `LlmTimeoutError`, `LlmUnknownKeyError` (all with user-readable messages, no HTTP codes exposed)
+  - Capability-based model registry: each provider has an ordered `models: { id, can: Capability[] }[]` list; call-time selection filters by `'text'` or `'vision'` capability; deprecated models are silently skipped via fallback loop
+- `src/lib/lookup-llm.ts`
+  - `getLlmWordData(word, reading, apiKey)` → `{ zhTranslation, jaDefinition, conjugations }`
+  - `getLlmSentenceData(sentence, apiKey)` → `{ sentenceTranslation, keyVocabulary }`
+  - `getOcrText(imageDataUrl, apiKey)` → extracted text string
+- `src/lib/llm.test.ts` — 16 Vitest tests covering: provider detection, text/vision routing, model fallback on 400/404, hard stops on 401/429/timeout, exhausted model list
+
+**Done when:** ✅ All three LLM functions return correct structured data with real Groq and Google AI Studio keys; error cases surfaced with user-readable messages; model fallback and capability routing verified by automated tests.
 
 ---
 

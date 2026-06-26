@@ -35,7 +35,7 @@ Called per Lookup.
 | Source | Provides | Notes |
 |---|---|---|
 | Tatoeba REST API (`api.tatoeba.org`) | Example sentences (JP + ZH) | Free, no key, 32,974 JP↔ZH pairs |
-| LLM (Groq / OpenRouter) | Chinese translation, Japanese monolingual definition, conjugations | User-supplied API Key |
+| LLM (Groq / Google AI Studio / OpenRouter) | Chinese translation, Japanese monolingual definition, conjugations, OCR | User-supplied API key — provider auto-detected from key prefix |
 
 ### Extension Storage
 - **`chrome.storage.local`:** User settings (API Key, preferences)
@@ -103,8 +103,10 @@ Given a text string (word, phrase, or sentence), returns a Lookup Result.
 All fields per card: word, reading, JLPT level, part-of-speech, pitch accent, Chinese translation, Japanese definition, conjugations, example sentences (pipe-separated), date saved.
 
 ### F8 — Settings Page
-- API Key input (Groq or OpenRouter) — stored in `chrome.storage.local`
-- Instructions for getting a free API key
+- API Key input — stored in `chrome.storage.local`
+  - Supports Groq (free, key starts with `gsk_`), Google AI Studio (free, key starts with `AIzaSy` or `AQ.`), and OpenRouter (key starts with `sk-or-`)
+  - Provider is auto-detected from the key prefix — user just pastes their key, no dropdown needed
+  - Instructions for getting a free key from Groq or Google AI Studio
 - Attribution credits (JMdict/EDRDG, Kanjium, Tatoeba)
 - "Clear all cards" danger button
 
@@ -173,8 +175,8 @@ interface VocabularyCard {
 
 ## Open Questions (to resolve during implementation)
 
-1. **JLPT level data source:** JMdict has no JLPT data. Options: (a) include a separate JLPT word list JSON bundled in the extension, (b) have the LLM estimate JLPT level (unreliable), (c) skip JLPT for v1. Recommendation: bundle a community JLPT word list (Jonathan Waller's `jlpt.info` data, MIT-compatible).
+1. **JLPT level data source:** ✅ Resolved — bundled Jonathan Waller's community JLPT word list as a compact JSON map (Issue #3).
 
-2. **Default LLM provider:** Recommend Groq (`qwen2.5-72b`) as the default recommendation to users, with OpenRouter as alternative. Need to finalize the LLM prompt for Japanese dictionary entry generation.
+2. **Default LLM provider:** ✅ Resolved — no default needed. The provider is auto-detected from the API key prefix. Users obtain a free key from Groq (`groq.com`) or Google AI Studio (`aistudio.google.com`) and paste it into Settings. The extension handles the rest.
 
-3. **Dictionary data install strategy:** Download `jmdict-eng-common` (~1.4 MB) and `kanjium/accents.txt` (~3.1 MB) at runtime on first install (rather than bundle in .crx), to keep extension size small and allow data updates without extension version bumps.
+3. **Dictionary data install strategy:** ✅ Resolved — downloaded at runtime on first install from GitHub Releases (JMdict) and raw GitHub URL (Kanjium). Extension bundle stays small (Issue #2).
