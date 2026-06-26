@@ -186,13 +186,14 @@ export default function DeckView({ installing }: DeckViewProps) {
     refreshCards();
   }, [refreshCards]);
 
-  // Listen for new cards saved from the content script popup
+  // Refresh when a card is saved from the content script, or when all cards are cleared from Settings
   useEffect(() => {
-    function handleCardSaved() {
-      refreshCards();
-    }
-    window.addEventListener('cliptodict:card-saved', handleCardSaved);
-    return () => window.removeEventListener('cliptodict:card-saved', handleCardSaved);
+    window.addEventListener('cliptodict:card-saved', refreshCards);
+    window.addEventListener('cliptodict:clear-deck', refreshCards);
+    return () => {
+      window.removeEventListener('cliptodict:card-saved', refreshCards);
+      window.removeEventListener('cliptodict:clear-deck', refreshCards);
+    };
   }, [refreshCards]);
 
   function handleDelete(id: string) {

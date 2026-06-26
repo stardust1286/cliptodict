@@ -73,8 +73,8 @@ export default defineContentScript({
               error,
               position: pos,
               onDismiss: removeLookupPopup,
-              onSave: (_r: LookupResult) => {
-                // Card saving will be implemented in a later issue
+              onSave: (r: LookupResult) => {
+                chrome.runtime.sendMessage({ type: 'SAVE_CARD', result: r });
               },
             }),
           );

@@ -2,6 +2,8 @@ import { installDictionary } from '../src/lib/dict/install';
 import { getInstallStatus, setInstallStatus } from '../src/lib/install-status';
 import { lookup } from '../src/lib/lookup';
 import { handleCaptureAndLookup } from '../src/lib/screen-clip-background';
+import { saveCard } from '../src/lib/deck';
+import type { LookupResult } from '../src/types/domain';
 
 export default defineBackground(() => {
   console.log('[ClipToDict] background service worker started');
@@ -59,6 +61,13 @@ export default defineBackground(() => {
           sendResponse({ error: err instanceof Error ? err.message : 'Lookup failed' });
         }
       })();
+      return true;
+    }
+
+    if (message.type === 'SAVE_CARD') {
+      saveCard(message.result as LookupResult)
+        .then(() => sendResponse({ ok: true }))
+        .catch((err: unknown) => sendResponse({ error: err instanceof Error ? err.message : 'Save failed' }));
       return true;
     }
 
