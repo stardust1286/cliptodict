@@ -41,23 +41,28 @@ const PROVIDERS: Record<Provider, ProviderConfig> = {
   groq: {
     base: 'https://api.groq.com/openai/v1',
     models: [
-      // Production models only (preview models excluded — not for production use)
-      { id: 'openai/gpt-oss-120b',        can: ['text', 'vision'] },
-      { id: 'llama-3.3-70b-versatile',    can: ['text'] },
-      { id: 'openai/gpt-oss-20b',         can: ['text', 'vision'] },
-      { id: 'groq/compound',              can: ['text', 'vision'] },
-      { id: 'groq/compound-mini',         can: ['text', 'vision'] },
-      { id: 'llama-3.1-8b-instant',       can: ['text'] },
+      // Llama 4 — text + vision (Scout is faster, Maverick is more capable)
+      { id: 'meta-llama/llama-4-scout-17b-16e-instruct',    can: ['text', 'vision'] },
+      { id: 'meta-llama/llama-4-maverick-17b-128e-instruct', can: ['text', 'vision'] },
+      // Llama 3.3 — text only (best quality for text tasks on Groq)
+      { id: 'llama-3.3-70b-versatile',                      can: ['text'] },
+      // Llama 3.2 Vision — stable vision fallbacks
+      { id: 'llama-3.2-90b-vision-preview',                 can: ['text', 'vision'] },
+      { id: 'llama-3.2-11b-vision-preview',                 can: ['text', 'vision'] },
+      // Llama 3.1 — fast text fallback
+      { id: 'llama-3.1-8b-instant',                         can: ['text'] },
     ],
   },
   google: {
     base: 'https://generativelanguage.googleapis.com/v1beta/openai',
     models: [
-      // Stable models only, newest first
-      { id: 'gemini-3.5-flash',      can: ['text', 'vision'] },
+      // Gemini 2.5 Flash — best balance of speed and quality
       { id: 'gemini-2.5-flash',      can: ['text', 'vision'] },
-      { id: 'gemini-3.1-flash-lite', can: ['text', 'vision'] },
       { id: 'gemini-2.5-flash-lite', can: ['text', 'vision'] },
+      // Gemini 2.0 Flash — stable fallback
+      { id: 'gemini-2.0-flash',      can: ['text', 'vision'] },
+      // Gemini 1.5 Flash — widest availability fallback
+      { id: 'gemini-1.5-flash',      can: ['text', 'vision'] },
     ],
   },
   openrouter: {

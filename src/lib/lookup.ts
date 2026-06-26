@@ -21,8 +21,12 @@ const SENTENCE_PARTICLES = new Set(['は', 'が', 'を', 'に', 'で', 'へ', '�
 
 function isSentence(text: string): boolean {
   if (text.length > 8) return true;
-  for (const ch of text) {
-    if (SENTENCE_PARTICLES.has(ch)) return true;
+  // Only apply particle heuristic for text ≥ 5 chars; shorter strings are almost
+  // always standalone words (e.g. いずれも contains も but is a single word).
+  if (text.length >= 5) {
+    for (const ch of text) {
+      if (SENTENCE_PARTICLES.has(ch)) return true;
+    }
   }
   return false;
 }
@@ -37,17 +41,21 @@ async function lookupWordPath(text: string, apiKey?: string): Promise<LookupResu
     fetchExamples(text),
   ]);
 
-  const reading = dictEntry?.reading;
+  const dictReading = dictEntry?.reading;
 
   // Phase 2: pitch accent (needs reading) + LLM (needs reading for best results) — parallel.
   const [pitchEntry, llmData] = await Promise.all([
-    reading
-      ? lookupPitchAccent(text, reading).catch(() => null)
+    dictReading
+      ? lookupPitchAccent(text, dictReading).catch(() => null)
       : Promise.resolve(null),
     apiKey
-      ? getLlmWordData(text, reading ?? '', apiKey).catch(() => null)
+      ? getLlmWordData(text, dictReading ?? '', apiKey).catch(() => null)
       : Promise.resolve(null),
   ]);
+
+  // Use the dictionary reading when available; fall back to the LLM-supplied reading
+  // for words the dictionary doesn't know (loan words, proper nouns, etc.).
+  const reading = dictReading ?? llmData?.reading;
 
   return {
     input: text,

@@ -14,6 +14,7 @@ import { callLLM, callVisionLLM, LlmError } from './llm';
 // ─── Return types ─────────────────────────────────────────────────────────────
 
 export interface WordLlmData {
+  reading?: string;
   zhTranslation: string;
   jaDefinition: string;
   conjugations: Record<string, string>;
@@ -41,10 +42,11 @@ function buildWordPrompt(word: string, reading: string): string {
   return `You are a Japanese-Chinese dictionary API. Respond with ONLY a valid JSON object, no markdown, no explanation.
 
 Word: ${word}
-Reading: ${reading}
+Reading hint: ${reading || '(unknown — please provide)'}
 
 Output this exact JSON shape:
 {
+  "reading": "<hiragana/katakana reading; empty string if word is already kana>",
   "zhTranslation": "<concise Simplified Chinese translation>",
   "jaDefinition": "<one-sentence Japanese monolingual definition ending with 。>",
   "conjugations": {
@@ -58,6 +60,7 @@ Output this exact JSON shape:
 }
 
 Rules:
+- reading: hiragana reading of the word (supply even if the reading hint is empty)
 - conjugations: fill forms for verbs/adjectives; use {} for nouns and expressions
 - Output ONLY the JSON object`;
 }
@@ -65,6 +68,7 @@ Rules:
 function isWordLlmData(data: unknown): data is WordLlmData {
   if (typeof data !== 'object' || data === null) return false;
   const d = data as Record<string, unknown>;
+  // reading is optional — responses without it are still valid
   return (
     typeof d.zhTranslation === 'string' &&
     typeof d.jaDefinition === 'string' &&
@@ -105,6 +109,7 @@ export async function getLlmWordData(
   }
 
   return {
+    reading: typeof parsed.reading === 'string' && parsed.reading.trim() ? parsed.reading.trim() : undefined,
     zhTranslation: parsed.zhTranslation,
     jaDefinition: parsed.jaDefinition,
     conjugations,
