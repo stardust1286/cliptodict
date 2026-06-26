@@ -5,6 +5,7 @@ import {
   type InstallStatus,
   type InstallPhase,
 } from '../../src/lib/install-status';
+import DeckView from '../../src/components/DeckView';
 
 type Tab = 'deck' | 'settings';
 
@@ -126,29 +127,11 @@ export default function App() {
       {/* Content */}
       <main className="flex-1 overflow-y-auto p-4">
         {tab === 'deck' ? (
-          <DeckPlaceholder installing={installStatus.phase !== 'done'} />
+          <DeckView installing={installStatus.phase !== 'done'} />
         ) : (
           <SettingsPlaceholder />
         )}
       </main>
-    </div>
-  );
-}
-
-function DeckPlaceholder({ installing }: { installing: boolean }) {
-  return (
-    <div className="flex flex-col items-center justify-center h-full gap-3 text-gray-400 py-12">
-      <div className="text-4xl">📖</div>
-      <p className="text-sm font-medium">Your deck is empty</p>
-      {installing ? (
-        <p className="text-xs text-center max-w-[200px] text-indigo-400">
-          Setting up dictionary data — this only happens once.
-        </p>
-      ) : (
-        <p className="text-xs text-center max-w-[200px]">
-          Select Japanese text on any webpage to look it up and save cards here.
-        </p>
-      )}
     </div>
   );
 }
