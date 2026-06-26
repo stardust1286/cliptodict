@@ -1,5 +1,6 @@
 import { installDictionary } from '../src/lib/dict/install';
 import { getInstallStatus, setInstallStatus } from '../src/lib/install-status';
+import { lookup } from '../src/lib/lookup';
 
 export default defineBackground(() => {
   console.log('[ClipToDict] background service worker started');
@@ -47,7 +48,31 @@ export default defineBackground(() => {
       return true;
     }
 
-    // Future message types (Issues #6+) will be handled here
+    if (message.type === 'LOOKUP') {
+      (async () => {
+        try {
+          const settings = await chrome.storage.local.get('apiKey') as { apiKey?: string };
+          const result = await lookup(message.text as string, settings.apiKey);
+          sendResponse(result);
+        } catch (err) {
+          sendResponse({ error: err instanceof Error ? err.message : 'Lookup failed' });
+        }
+      })();
+      return true;
+    }
+
+    // Future message types will be handled here
     return true;
+  });
+
+  chrome.commands.onCommand.addListener((command) => {
+    if (command === 'screen-clip') {
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        const tabId = tabs[0]?.id;
+        if (tabId != null) {
+          chrome.tabs.sendMessage(tabId, { type: 'ACTIVATE_CLIP_MODE' });
+        }
+      });
+    }
   });
 });
