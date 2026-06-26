@@ -6,6 +6,7 @@ import {
   type InstallPhase,
 } from '../../src/lib/install-status';
 import DeckView from '../../src/components/DeckView';
+import SettingsView from '../../src/components/SettingsView';
 
 type Tab = 'deck' | 'settings';
 
@@ -129,28 +130,10 @@ export default function App() {
         {tab === 'deck' ? (
           <DeckView installing={installStatus.phase !== 'done'} />
         ) : (
-          <SettingsPlaceholder />
+          <SettingsView />
         )}
       </main>
     </div>
   );
 }
 
-function SettingsPlaceholder() {
-  return (
-    <div className="space-y-4">
-      <h2 className="text-base font-semibold text-gray-800">Settings</h2>
-      <p className="text-sm text-gray-500">
-        API key and preferences will appear here (Issue #11).
-      </p>
-      <div className="mt-6 border-t pt-4">
-        <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Attribution</h3>
-        <ul className="space-y-1 text-xs text-gray-400">
-          <li>JMdict/EDRDG — CC BY-SA 4.0</li>
-          <li>Kanjium / Uros O. — CC BY-SA 4.0</li>
-          <li>Tatoeba — CC BY 2.0 FR</li>
-        </ul>
-      </div>
-    </div>
-  );
-}
