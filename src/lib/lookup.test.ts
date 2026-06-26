@@ -129,6 +129,29 @@ describe('lookup — word path', () => {
     const result = await lookup('食べる', 'gsk_test');
     expect(result.pitchAccent).toBe(2);
   });
+
+  it('captures the LLM error message when an API key was present but the call failed', async () => {
+    mockGetLlmWord.mockRejectedValue(new Error('Your API key was rejected.'));
+    const result = await lookup('食べる', 'gsk_test');
+    expect(result.llmError).toBe('Your API key was rejected.');
+    expect(result.source).toBe('bundled-only');
+  });
+
+  it('does not set llmError when the LLM succeeds', async () => {
+    const result = await lookup('食べる', 'gsk_test');
+    expect(result.llmError).toBeUndefined();
+  });
+
+  it('propagates the JMdict common flag onto the result', async () => {
+    const result = await lookup('食べる', 'gsk_test');
+    expect(result.common).toBe(true);
+  });
+
+  it('leaves common undefined when the word is not in JMdict', async () => {
+    mockLookupWord.mockResolvedValue(null);
+    const result = await lookup('食べる', 'gsk_test');
+    expect(result.common).toBeUndefined();
+  });
 });
 
 // ─── Bundled-only fallback ────────────────────────────────────────────────────
@@ -161,6 +184,11 @@ describe('lookup — bundled-only (no API key)', () => {
     await lookup('食べる');
     expect(mockGetLlmWord).not.toHaveBeenCalled();
   });
+
+  it('does not set llmError when there is simply no API key', async () => {
+    const result = await lookup('食べる');
+    expect(result.llmError).toBeUndefined();
+  });
 });
 
 // ─── Sentence path ────────────────────────────────────────────────────────────
@@ -171,14 +199,24 @@ describe('lookup — sentence path', () => {
     expect(result.type).toBe('sentence');
   });
 
-  it('classifies text containing は as a sentence', async () => {
-    const result = await lookup('彼女は', 'gsk_test');
+  it('classifies text (≥5 chars) containing は as a sentence', async () => {
+    const result = await lookup('彼女は元気', 'gsk_test');
     expect(result.type).toBe('sentence');
   });
 
-  it('classifies text containing を as a sentence', async () => {
-    const result = await lookup('本を', 'gsk_test');
+  it('classifies text (≥5 chars) containing を as a sentence', async () => {
+    const result = await lookup('本を読んだ', 'gsk_test');
     expect(result.type).toBe('sentence');
+  });
+
+  it('treats a short particle fragment (<5 chars) as a word, not a sentence', async () => {
+    // The particle heuristic only applies to text ≥5 chars; shorter strings
+    // (e.g. 本を, 彼女は) are almost always standalone words the user wants
+    // looked up directly — see isSentence() in lookup.ts.
+    const fragment = await lookup('本を', 'gsk_test');
+    expect(fragment.type).toBe('word');
+    const fragment2 = await lookup('彼女は', 'gsk_test');
+    expect(fragment2.type).toBe('word');
   });
 
   it('returns sentenceTranslation and keyVocabulary', async () => {

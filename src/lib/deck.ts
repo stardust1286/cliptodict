@@ -111,9 +111,38 @@ function escapeField(value: string | undefined | null): string {
   return str;
 }
 
+/** Pitch accent → string (kept distinct from '' so mora 0 / heiban is not lost). */
+function formatPitch(pitch: number | undefined): string {
+  return pitch === undefined ? '' : String(pitch);
+}
+
+/** Conjugations map → "form:value|form:value". */
+function formatConjugations(conjugations: Record<string, string> | undefined): string {
+  if (!conjugations) return '';
+  return Object.entries(conjugations)
+    .map(([form, value]) => `${form}:${value}`)
+    .join('|');
+}
+
+/** Example sentences → "jp / zh|jp / zh". */
+function formatExamples(examples: Array<{ jp: string; zh: string }> | undefined): string {
+  if (!examples) return '';
+  return examples.map((ex) => `${ex.jp} / ${ex.zh}`).join('|');
+}
+
+/** Key vocabulary → "word:zhMeaning|word:zhMeaning". */
+function formatKeyVocab(vocab: Array<{ word: string; zhMeaning: string }> | undefined): string {
+  if (!vocab) return '';
+  return vocab.map((v) => `${v.word}:${v.zhMeaning}`).join('|');
+}
+
 /**
  * Synchronously converts an array of VocabularyCard objects to a CSV string.
- * Columns: id, savedAt, type, input, reading, jlptLevel, partOfSpeech, zhTranslation, sentenceTranslation
+ *
+ * Emits every field PRD F7 requires — reading, JLPT level, part-of-speech,
+ * pitch accent, Chinese translation, Japanese definition, conjugations, and
+ * example sentences (pipe-separated) — plus the sentence-path fields and
+ * bookkeeping columns (id, savedAt, type).
  */
 export function exportCsv(cards: VocabularyCard[]): string {
   const headers = [
@@ -124,8 +153,13 @@ export function exportCsv(cards: VocabularyCard[]): string {
     'reading',
     'jlptLevel',
     'partOfSpeech',
+    'pitchAccent',
     'zhTranslation',
+    'jaDefinition',
+    'conjugations',
+    'exampleSentences',
     'sentenceTranslation',
+    'keyVocabulary',
   ];
 
   const rows = cards.map((card) => [
@@ -136,8 +170,13 @@ export function exportCsv(cards: VocabularyCard[]): string {
     escapeField(card.reading),
     escapeField(card.jlptLevel),
     escapeField(card.partOfSpeech),
+    escapeField(formatPitch(card.pitchAccent)),
     escapeField(card.zhTranslation),
+    escapeField(card.jaDefinition),
+    escapeField(formatConjugations(card.conjugations)),
+    escapeField(formatExamples(card.exampleSentences)),
     escapeField(card.sentenceTranslation),
+    escapeField(formatKeyVocab(card.keyVocabulary)),
   ]);
 
   return [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n');

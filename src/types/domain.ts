@@ -18,7 +18,15 @@ export interface LookupResult {
   sentenceTranslation?: string; // full Chinese translation (LLM)
   keyVocabulary?: Array<{ word: string; zhMeaning: string }>;
 
+  common?: boolean;        // word is flagged "common" in JMdict (word lookups only)
   source: 'full' | 'bundled-only'; // whether LLM was available
+  /**
+   * User-facing reason the LLM step failed, when an API key *was* present but
+   * the call errored (auth/rate-limit/timeout/parse). Absent when no key was
+   * supplied (that is the plain bundled-only case) or when the LLM succeeded.
+   * Lets the popup distinguish "add a key" from "your key/call failed".
+   */
+  llmError?: string;
 }
 
 // ─── Vocabulary Card ──────────────────────────────────────────────────────────

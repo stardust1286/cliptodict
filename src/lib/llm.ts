@@ -203,21 +203,31 @@ async function fetchWithFallback(
   messages: ChatMessage[],
   extraHeaders: Record<string, string> = {},
 ): Promise<string> {
+  let timedOut = false;
+
   for (const model of models) {
     try {
       return await fetchCompletion(baseUrl, apiKey, model, messages, extraHeaders);
     } catch (err) {
-      if (
-        err instanceof LlmAuthError ||
-        err instanceof LlmRateLimitError ||
-        err instanceof LlmTimeoutError
-      ) {
+      // Auth (401) and rate-limit (429) are account-level: every model would
+      // fail identically, so stop immediately.
+      if (err instanceof LlmAuthError || err instanceof LlmRateLimitError) {
         throw err;
       }
-      // Model-level error (400/404/422) — try the next model
+      // A timeout is model-specific, NOT account-level. A heavy prompt can make
+      // a slow "thinking" model (e.g. the first, highest-quality one) exceed the
+      // deadline while a lighter fallback model answers fine. So remember it and
+      // fall through to the next model instead of hard-stopping.
+      if (err instanceof LlmTimeoutError) {
+        timedOut = true;
+        continue;
+      }
+      // Model-level error (400/404/422) — try the next model.
     }
   }
 
+  // Exhausted every model. Surface the most informative reason.
+  if (timedOut) throw new LlmTimeoutError();
   throw new LlmError(
     'All AI models are currently unavailable. ' +
     'Please try again later, or update the extension to get the latest model list.',

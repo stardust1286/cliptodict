@@ -5,5 +5,9 @@ dist/
 *.zip
 pnpm-debug.log*
 .claude/
+.clone/
 *.txt
 SESSION_COMMANDS.md
+
+# Local scratch / exported test data
+result of csv/

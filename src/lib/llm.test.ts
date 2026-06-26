@@ -165,8 +165,8 @@ describe('hard stops — no model retry', () => {
     expect((fetch as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(1);
   });
 
-  it('throws LlmTimeoutError when the request times out, without retrying', async () => {
-    // Reject via the real AbortSignal so controller.signal.aborted === true
+  it('throws LlmTimeoutError only after every model times out', async () => {
+    // Every model hangs until aborted by the timeout — so all attempts time out.
     vi.stubGlobal('fetch', vi.fn().mockImplementation((_url: string, opts: RequestInit) =>
       new Promise((_, reject) => {
         opts.signal?.addEventListener('abort', () =>
@@ -175,12 +175,42 @@ describe('hard stops — no model retry', () => {
       })
     ));
     const promise = callLLM('gsk_test', 'hello');
-    // Run timers and attach rejection handler simultaneously so there's no
-    // window where the promise is rejected but unhandled.
     await Promise.all([
       vi.runAllTimersAsync(),
       expect(promise).rejects.toBeInstanceOf(LlmTimeoutError),
     ]);
-    expect((fetch as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(1);
+    // A timeout is model-specific, so it must fall through and try every model
+    // before giving up — not stop after the first.
+    expect((fetch as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(1);
+  });
+});
+
+// ─── Timeout fallthrough ──────────────────────────────────────────────────────
+
+describe('timeout fallthrough', () => {
+  it('falls through to the next model when the first model times out', async () => {
+    // First model hangs until aborted (times out); second model answers.
+    const mock = vi.fn()
+      .mockImplementationOnce((_url: string, opts: RequestInit) =>
+        new Promise((_, reject) => {
+          opts.signal?.addEventListener('abort', () =>
+            reject(Object.assign(new Error('aborted'), { name: 'AbortError' }))
+          );
+        })
+      )
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(OK_RESPONSE),
+        text: () => Promise.resolve(JSON.stringify(OK_RESPONSE)),
+      });
+    vi.stubGlobal('fetch', mock);
+
+    const promise = callLLM('gsk_test', 'hello');
+    await Promise.all([
+      vi.runAllTimersAsync(),
+      expect(promise).resolves.toBe('result text'),
+    ]);
+    expect(mock.mock.calls).toHaveLength(2);
   });
 });

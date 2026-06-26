@@ -49,6 +49,44 @@ const Badge: React.FC<{ label: string; bg: string; color: string }> = ({
   </span>
 );
 
+/**
+ * Shown when a result came back without LLM enrichment (`source === 'bundled-only'`).
+ * Distinguishes the two reasons so the user knows what to do:
+ *   • llmError present → the key/call failed; show the reason.
+ *   • llmError absent  → no API key was set; prompt the user to add one (PRD F3).
+ */
+const StatusNote: React.FC<{ llmError?: string }> = ({ llmError }) =>
+  llmError ? (
+    <p
+      style={{
+        margin: '10px 0 0',
+        color: '#b91c1c',
+        backgroundColor: '#fef2f2',
+        borderRadius: '8px',
+        padding: '8px 10px',
+        fontSize: '12px',
+        lineHeight: '1.5',
+      }}
+    >
+      Translation unavailable: {llmError}
+    </p>
+  ) : (
+    <p
+      style={{
+        margin: '10px 0 0',
+        color: '#92400e',
+        backgroundColor: '#fef3c7',
+        borderRadius: '8px',
+        padding: '8px 10px',
+        fontSize: '12px',
+        lineHeight: '1.5',
+      }}
+    >
+      Add an API key in the extension popup to enable Chinese translation,
+      definition, and conjugations.
+    </p>
+  );
+
 const Spinner: React.FC = () => (
   <div
     style={{
@@ -119,10 +157,12 @@ const LookupPopup: React.FC<LookupPopupProps> = ({
   }, [position]);
 
   function handleSave(): void {
-    if (!result) return;
+    if (!result || savedFeedback) return;
     onSave(result);
     setSavedFeedback(true);
-    setTimeout(() => setSavedFeedback(false), 1000);
+    // Keep the "Saved ✓" state until a new lookup replaces `result` (reset in
+    // the effect above). Reverting it on a timer made users think the save had
+    // failed and re-click, producing duplicate cards.
   }
 
   // ── Shared outer wrapper styles ──────────────────────────────────────────────
@@ -181,7 +221,7 @@ const LookupPopup: React.FC<LookupPopupProps> = ({
     padding: '5px 16px',
     borderRadius: '6px',
     border: 'none',
-    cursor: 'pointer',
+    cursor: savedFeedback ? 'default' : 'pointer',
     fontSize: '13px',
     fontWeight: 600,
     backgroundColor: savedFeedback ? '#16a34a' : '#4f46e5',
@@ -329,7 +369,7 @@ const LookupPopup: React.FC<LookupPopupProps> = ({
                 color={jlptStyle.color}
               />
             )}
-            {result.source === 'full' && (
+            {result.common && (
               <Badge label="common" bg="#f3f4f6" color="#374151" />
             )}
           </div>
@@ -501,11 +541,16 @@ const LookupPopup: React.FC<LookupPopupProps> = ({
               </div>
             </div>
           )}
+
+          {/* 8. Bundled-only fallback / LLM error notice (PRD F3) */}
+          {result.source === 'bundled-only' && (
+            <StatusNote llmError={result.llmError} />
+          )}
         </div>
 
         {/* Footer: Save button */}
         <div style={footerStyle}>
-          <button style={saveButtonStyle} onClick={handleSave}>
+          <button style={saveButtonStyle} onClick={handleSave} disabled={savedFeedback}>
             {savedFeedback ? 'Saved ✓' : 'Save'}
           </button>
         </div>
@@ -604,6 +649,11 @@ const LookupPopup: React.FC<LookupPopupProps> = ({
               ))}
             </div>
           </div>
+        )}
+
+        {/* Bundled-only fallback / LLM error notice (PRD F3) */}
+        {result.source === 'bundled-only' && (
+          <StatusNote llmError={result.llmError} />
         )}
       </div>
 

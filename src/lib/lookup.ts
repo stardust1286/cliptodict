@@ -31,27 +31,57 @@ function isSentence(text: string): boolean {
   return false;
 }
 
+// ─── LLM error capture ──────────────────────────────────────────────────────
+
+/**
+ * Outcome of an attempted LLM call. We deliberately do NOT swallow failures
+ * with `.catch(() => null)`: a rejected key, rate-limit, or timeout must be
+ * surfaced to the popup (via `error`) so it can tell the user what went wrong
+ * instead of silently looking identical to no-API-key bundled-only mode.
+ */
+interface LlmOutcome<T> {
+  data: T | null;
+  error?: string;
+}
+
+function settleLlm<T>(promise: Promise<T>): Promise<LlmOutcome<T>> {
+  return promise.then(
+    (data) => ({ data }),
+    (err: unknown) => ({
+      data: null,
+      error: err instanceof Error ? err.message : 'AI lookup failed.',
+    }),
+  );
+}
+
 // ─── Word path ────────────────────────────────────────────────────────────────
 
 async function lookupWordPath(text: string, apiKey?: string): Promise<LookupResult> {
-  // Phase 1: lookups that don't need the reading — all in parallel.
-  const [dictEntry, jlptLevel, examples] = await Promise.all([
+  // Tatoeba examples are not needed to start the LLM/pitch calls, and the
+  // request can take up to its 5s timeout. Kick it off now and overlap it with
+  // phase 2 instead of blocking the (much slower) LLM call behind it.
+  const examplesPromise = fetchExamples(text);
+
+  // Phase 1: the dictionary reading gates phase 2, so resolve it first.
+  const [dictEntry, jlptLevel] = await Promise.all([
     lookupWord(text).catch(() => null),
     Promise.resolve(lookupJlpt(text)),
-    fetchExamples(text),
   ]);
 
   const dictReading = dictEntry?.reading;
 
   // Phase 2: pitch accent (needs reading) + LLM (needs reading for best results) — parallel.
-  const [pitchEntry, llmData] = await Promise.all([
+  const [pitchEntry, llmOutcome] = await Promise.all([
     dictReading
       ? lookupPitchAccent(text, dictReading).catch(() => null)
       : Promise.resolve(null),
     apiKey
-      ? getLlmWordData(text, dictReading ?? '', apiKey).catch(() => null)
-      : Promise.resolve(null),
+      ? settleLlm(getLlmWordData(text, dictReading ?? '', apiKey))
+      : Promise.resolve<LlmOutcome<Awaited<ReturnType<typeof getLlmWordData>>>>({ data: null }),
   ]);
+
+  const llmData = llmOutcome.data;
+  const examples = await examplesPromise;
 
   // Use the dictionary reading when available; fall back to the LLM-supplied reading
   // for words the dictionary doesn't know (loan words, proper nouns, etc.).
@@ -68,7 +98,9 @@ async function lookupWordPath(text: string, apiKey?: string): Promise<LookupResu
     jaDefinition: llmData?.jaDefinition,
     conjugations: llmData?.conjugations,
     exampleSentences: examples.length > 0 ? examples : undefined,
+    common: dictEntry?.common,
     source: llmData ? 'full' : 'bundled-only',
+    llmError: llmOutcome.error,
   };
 }
 
@@ -79,7 +111,7 @@ async function lookupSentencePath(text: string, apiKey?: string): Promise<Lookup
     return { input: text, type: 'sentence', source: 'bundled-only' };
   }
 
-  const llmData = await getLlmSentenceData(text, apiKey).catch(() => null);
+  const { data: llmData, error: llmError } = await settleLlm(getLlmSentenceData(text, apiKey));
 
   return {
     input: text,
@@ -87,6 +119,7 @@ async function lookupSentencePath(text: string, apiKey?: string): Promise<Lookup
     sentenceTranslation: llmData?.sentenceTranslation,
     keyVocabulary: llmData?.keyVocabulary,
     source: llmData ? 'full' : 'bundled-only',
+    llmError,
   };
 }
 
