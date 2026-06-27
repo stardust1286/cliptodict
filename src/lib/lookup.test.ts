@@ -228,10 +228,44 @@ describe('lookup — sentence path', () => {
 
   it('calls getLlmSentenceData (not word data)', async () => {
     await lookup('今日は学校に行きました', 'gsk_test');
-    expect(mockGetLlmSentence).toHaveBeenCalledWith('今日は学校に行きました', 'gsk_test');
+    // Third argument is the dictHints array (may be [] or populated depending on mocks)
+    expect(mockGetLlmSentence).toHaveBeenCalledWith(
+      '今日は学校に行きました',
+      'gsk_test',
+      expect.any(Array),
+    );
     expect(mockGetLlmWord).not.toHaveBeenCalled();
-    expect(mockLookupWord).not.toHaveBeenCalled();
     expect(mockFetchExamples).not.toHaveBeenCalled();
+  });
+
+  it('passes dict hints to getLlmSentenceData for short sentences (< 25 chars)', async () => {
+    mockLookupWord.mockImplementation(async (w) =>
+      w === '覚書' ? { word: '覚書', reading: 'おぼえがき', partOfSpeech: 'Noun', common: false } : null,
+    );
+    await lookup('覚書', 'gsk_test'); // 3 chars → word path, not sentence; use a sentence instead
+    // Use a sentence that contains a known word
+    await lookup('覚書がある', 'gsk_test'); // 6 chars, contains が → sentence path
+    const lastCall = mockGetLlmSentence.mock.calls.at(-1)!;
+    const hints = lastCall[2] as Array<{ word: string; reading: string }>;
+    expect(hints.some((h) => h.word === '覚書' && h.reading === 'おぼえがき')).toBe(true);
+  });
+
+  it('skips dict scan for long sentences (>= 25 chars) and passes empty hints', async () => {
+    // Sentence is exactly 25 chars — threshold skips the scan entirely.
+    const longSentence = 'あいうえおかきくけこさしすせそたちつてとなにぬね'; // 24 chars → add one more
+    const sentence25 = longSentence + 'の'; // 25 chars
+    expect(sentence25.length).toBe(25);
+
+    vi.clearAllMocks();
+    mockGetLlmSentence.mockResolvedValue(LLM_SENTENCE_DATA);
+
+    await lookup(sentence25, 'gsk_test');
+
+    const lastCall = mockGetLlmSentence.mock.calls.at(-1)!;
+    const hints = lastCall[2] as unknown[];
+    expect(hints).toEqual([]);
+    // lookupWord must not have been called at all (scan was skipped)
+    expect(mockLookupWord).not.toHaveBeenCalled();
   });
 
   it('returns bundled-only sentence result when no API key', async () => {
@@ -264,8 +298,10 @@ describe('sentence detection heuristic', () => {
     expect(result.type).toBe('sentence');
   });
 
-  it('treats exactly 8 characters without particles as a word', async () => {
+  it('treats exactly 8 characters without particles as a sentence', async () => {
+    // Threshold changed from > 8 to >= 8: 8-char strings like 署名した覚書 are
+    // compound phrases, not single dictionary words, so sentence path is correct.
     const result = await lookup('アイウエオカキク', 'gsk_test');
-    expect(result.type).toBe('word');
+    expect(result.type).toBe('sentence');
   });
 });

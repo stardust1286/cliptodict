@@ -14,13 +14,13 @@ import { lookupWord, lookupPitchAccent } from './lookup-dict';
 import { lookupJlpt } from './jlpt';
 import { fetchExamples } from './tatoeba';
 import { getLlmWordData, getLlmSentenceData } from './lookup-llm';
-import type { LookupResult } from '../types/domain';
+import type { JMdictEntry, LookupResult } from '../types/domain';
 
 // Particles that strongly signal this is a sentence rather than a standalone word.
 const SENTENCE_PARTICLES = new Set(['は', 'が', 'を', 'に', 'で', 'へ', 'と', 'も']);
 
 function isSentence(text: string): boolean {
-  if (text.length > 8) return true;
+  if (text.length >= 8) return true;
   // Only apply particle heuristic for text ≥ 5 chars; shorter strings are almost
   // always standalone words (e.g. いずれも contains も but is a single word).
   if (text.length >= 5) {
@@ -104,6 +104,41 @@ async function lookupWordPath(text: string, apiKey?: string): Promise<LookupResu
   };
 }
 
+// ─── JMdict greedy scan (sentence path only) ─────────────────────────────────
+
+/**
+ * For short sentences (< DICT_SCAN_THRESHOLD chars), scan every position in the
+ * text for JMdict matches using a greedy longest-match approach (tries substrings
+ * of length 6 down to 1). Returns matched entries deduplicated by word.
+ *
+ * For longer texts the scan is skipped: LLM accuracy on common vocabulary is
+ * already high, and the IndexedDB query cost + prompt bloat outweigh the benefit.
+ */
+const DICT_SCAN_THRESHOLD = 25;
+const MAX_WORD_LEN = 6;
+
+async function scanDictInSentence(text: string): Promise<JMdictEntry[]> {
+  if (text.length >= DICT_SCAN_THRESHOLD) return [];
+
+  const seen = new Set<string>();
+  const results: JMdictEntry[] = [];
+
+  for (let i = 0; i < text.length; i++) {
+    for (let len = Math.min(MAX_WORD_LEN, text.length - i); len >= 1; len--) {
+      const candidate = text.slice(i, i + len);
+      if (seen.has(candidate)) break;
+      const entry = await lookupWord(candidate).catch(() => null);
+      if (entry) {
+        seen.add(candidate);
+        results.push(entry);
+        break; // longest match at this position — skip shorter candidates
+      }
+    }
+  }
+
+  return results;
+}
+
 // ─── Sentence path ────────────────────────────────────────────────────────────
 
 async function lookupSentencePath(text: string, apiKey?: string): Promise<LookupResult> {
@@ -111,7 +146,12 @@ async function lookupSentencePath(text: string, apiKey?: string): Promise<Lookup
     return { input: text, type: 'sentence', source: 'bundled-only' };
   }
 
-  const { data: llmData, error: llmError } = await settleLlm(getLlmSentenceData(text, apiKey));
+  // Pre-scan dictionary for short sentences to ground LLM readings/meanings.
+  const dictHints = await scanDictInSentence(text);
+
+  const { data: llmData, error: llmError } = await settleLlm(
+    getLlmSentenceData(text, apiKey, dictHints),
+  );
 
   return {
     input: text,

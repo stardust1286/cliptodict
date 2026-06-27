@@ -10,6 +10,7 @@
  */
 
 import { callLLM, callVisionLLM, LlmError } from './llm';
+import type { JMdictEntry } from '../types/domain';
 
 // ─── Return types ─────────────────────────────────────────────────────────────
 
@@ -118,11 +119,20 @@ export async function getLlmWordData(
 
 // ─── getLlmSentenceData ───────────────────────────────────────────────────────
 
-function buildSentencePrompt(sentence: string): string {
+function buildSentencePrompt(sentence: string, dictHints: JMdictEntry[]): string {
+  const hintBlock =
+    dictHints.length > 0
+      ? `\nDictionary entries found in this sentence (use these readings/POS as ground truth):\n` +
+        dictHints
+          .map((e) => `  ${e.word} → reading: ${e.reading}, POS: ${e.partOfSpeech}`)
+          .join('\n') +
+        '\n'
+      : '';
+
   return `You are a Japanese-Chinese translation API. Respond with ONLY a valid JSON object, no markdown, no explanation.
 
 Sentence: ${sentence}
-
+${hintBlock}
 Output this exact JSON shape:
 {
   "sentenceTranslation": "<full Chinese translation of the sentence in Simplified Chinese>",
@@ -133,6 +143,7 @@ Output this exact JSON shape:
 
 Rules:
 - keyVocabulary: 3–6 key words/phrases from the sentence that are interesting or non-trivial
+- When dictionary entries are provided above, their readings are authoritative — do not deviate
 - Output ONLY the JSON object`;
 }
 
@@ -160,8 +171,9 @@ function isSentenceLlmData(data: unknown): data is SentenceLlmData {
 export async function getLlmSentenceData(
   sentence: string,
   apiKey: string,
+  dictHints: JMdictEntry[] = [],
 ): Promise<SentenceLlmData> {
-  const raw = await callLLM(apiKey, buildSentencePrompt(sentence));
+  const raw = await callLLM(apiKey, buildSentencePrompt(sentence, dictHints));
 
   let parsed: unknown;
   try {
