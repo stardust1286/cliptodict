@@ -14,7 +14,6 @@ function containsJapanese(text: string): boolean {
 
 export default defineContentScript({
   matches: ['<all_urls>'],
-  cssInjectionMode: 'ui',
   async main(ctx) {
     let selectionButtonUi: Awaited<ReturnType<typeof createShadowRootUi>> | null = null;
     let lookupPopupUi: Awaited<ReturnType<typeof createShadowRootUi>> | null = null;
@@ -65,7 +64,9 @@ export default defineContentScript({
         position: 'overlay',
         zIndex: 999999,
         onMount(container) {
-          const root = createRoot(container);
+          const mountPoint = document.createElement('div');
+          container.appendChild(mountPoint);
+          const root = createRoot(mountPoint);
           root.render(
             React.createElement(LookupPopup, {
               result,
@@ -149,7 +150,9 @@ export default defineContentScript({
         position: 'overlay',
         zIndex: 999999,
         onMount(container) {
-          const root = createRoot(container);
+          const mountPoint = document.createElement('div');
+          container.appendChild(mountPoint);
+          const root = createRoot(mountPoint);
           root.render(
             React.createElement(SelectionButton, {
               position,
@@ -193,7 +196,9 @@ export default defineContentScript({
             position: 'overlay',
             zIndex: 999998,
             onMount(container) {
-              const root = createRoot(container);
+              const mountPoint = document.createElement('div');
+              container.appendChild(mountPoint);
+              const root = createRoot(mountPoint);
               root.render(
                 React.createElement(ClipOverlay, {
                   onDismiss: removeClipOverlay,
