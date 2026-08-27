@@ -189,6 +189,8 @@ export default defineContentScript({
     chrome.runtime.onMessage.addListener((message) => {
       if (message.type === 'ACTIVATE_CLIP_MODE') {
         void (async () => {
+          removeSelectionButton();
+          removeLookupPopup();
           removeClipOverlay();
 
           clipOverlayUi = await createShadowRootUi(ctx, {
