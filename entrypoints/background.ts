@@ -80,7 +80,9 @@ export default defineBackground(() => {
       return true;
     }
 
-    return true;
+    // Unrecognized message type: return false so Chrome doesn't keep the
+    // response channel open waiting for a sendResponse that will never come.
+    return false;
   });
 
   chrome.commands.onCommand.addListener((command) => {
