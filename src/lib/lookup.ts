@@ -130,23 +130,38 @@ async function scanDictInSentence(text: string): Promise<JMdictEntry[]> {
   const results: JMdictEntry[] = [];
   let loggedFailure = false;
 
+  const safeLookup = (candidate: string) =>
+    lookupWord(candidate).catch((err: unknown) => {
+      // Log once per scan (not per candidate) so a broken IndexedDB
+      // connection doesn't flood the console with ~100+ identical errors.
+      if (!loggedFailure) {
+        loggedFailure = true;
+        console.error('[ClipToDict] scanDictInSentence: lookupWord failed:', err);
+      }
+      return null;
+    });
+
+  // All candidate lengths at a given position are independent IndexedDB
+  // reads, so query them in parallel per position instead of serially
+  // awaiting one at a time — then pick the longest one that actually
+  // matched (longest-match-wins), preserving the original semantics.
   for (let i = 0; i < text.length; i++) {
-    for (let len = Math.min(MAX_WORD_LEN, text.length - i); len >= 1; len--) {
+    const maxLen = Math.min(MAX_WORD_LEN, text.length - i);
+    const candidates: string[] = [];
+    for (let len = maxLen; len >= 1; len--) {
       const candidate = text.slice(i, i + len);
       if (seen.has(candidate)) break;
-      const entry = await lookupWord(candidate).catch((err: unknown) => {
-        // Log once per scan (not per candidate) so a broken IndexedDB
-        // connection doesn't flood the console with ~100+ identical errors.
-        if (!loggedFailure) {
-          loggedFailure = true;
-          console.error('[ClipToDict] scanDictInSentence: lookupWord failed:', err);
-        }
-        return null;
-      });
+      candidates.push(candidate);
+    }
+
+    const entries = await Promise.all(candidates.map(safeLookup));
+    const matchIndex = entries.findIndex((entry) => entry !== null);
+    if (matchIndex !== -1) {
+      const candidate = candidates[matchIndex];
+      const entry = entries[matchIndex];
       if (entry) {
         seen.add(candidate);
         results.push(entry);
-        break; // longest match at this position — skip shorter candidates
       }
     }
   }

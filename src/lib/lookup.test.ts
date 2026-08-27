@@ -278,6 +278,24 @@ describe('lookup — sentence path', () => {
     expect(hints.some((h) => h.word === '覚書' && h.reading === 'おぼえがき')).toBe(true);
   });
 
+  it('prefers the longest matching substring at each position over shorter ones', async () => {
+    // Both '覚書' (2 chars) and '覚' (1 char) would match in the dictionary;
+    // the scan must pick the longer one, matching the original serial
+    // longest-match-first behavior even though lookups now run in parallel.
+    mockLookupWord.mockImplementation(async (w) => {
+      if (w === '覚書') return { word: '覚書', reading: 'おぼえがき', partOfSpeech: 'Noun', common: false };
+      if (w === '覚') return { word: '覚', reading: 'かく', partOfSpeech: 'Verb', common: false };
+      return null;
+    });
+
+    await lookup('覚書がある', 'gsk_test');
+
+    const lastCall = mockGetLlmSentence.mock.calls.at(-1)!;
+    const hints = lastCall[2] as Array<{ word: string; reading: string }>;
+    expect(hints.some((h) => h.word === '覚書')).toBe(true);
+    expect(hints.some((h) => h.word === '覚')).toBe(false);
+  });
+
   it('skips dict scan for long sentences (>= 25 chars) and passes empty hints', async () => {
     // Sentence is exactly 25 chars — threshold skips the scan entirely.
     const longSentence = 'あいうえおかきくけこさしすせそたちつてとなにぬね'; // 24 chars → add one more
