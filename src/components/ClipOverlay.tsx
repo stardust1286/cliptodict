@@ -17,6 +17,13 @@ import type { LookupResult } from '../types/domain';
 export interface ClipOverlayProps {
   onDismiss: () => void;
   onLookupResult: (result: LookupResult) => void;
+  /**
+   * Called when CAPTURE_AND_LOOKUP resolves to an error (no API key, auth
+   * failure, rate limit, timeout, OCR failure, etc). The overlay itself is
+   * always dismissed; this lets the caller show the same error UI the
+   * text-selection path already uses instead of silently vanishing.
+   */
+  onError: (message: string) => void;
 }
 
 type State = 'idle' | 'drawing' | 'captured' | 'done';
@@ -46,14 +53,17 @@ function makeRect(start: Point, end: Point): Rect {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function ClipOverlay({ onDismiss, onLookupResult }: ClipOverlayProps) {
+export default function ClipOverlay({ onDismiss, onLookupResult, onError }: ClipOverlayProps) {
   const [state, setState] = useState<State>('idle');
   const [start, setStart] = useState<Point | null>(null);
   const [current, setCurrent] = useState<Point | null>(null);
 
-  // Keep a ref to onDismiss so the keydown listener never captures a stale closure.
+  // Keep refs to the callbacks so the keydown listener and the async
+  // sendMessage callback never capture a stale closure.
   const onDismissRef = useRef(onDismiss);
   onDismissRef.current = onDismiss;
+  const onErrorRef = useRef(onError);
+  onErrorRef.current = onError;
 
   // Escape key dismisses the overlay.
   useEffect(() => {
@@ -118,8 +128,12 @@ export default function ClipOverlay({ onDismiss, onLookupResult }: ClipOverlayPr
         (response: unknown) => {
           setState('done');
 
-          // If chrome runtime error or response is an error object, just dismiss.
           if (chrome.runtime.lastError || !response) {
+            console.warn(
+              '[ClipToDict] CAPTURE_AND_LOOKUP failed:',
+              chrome.runtime.lastError?.message ?? 'no response',
+            );
+            onErrorRef.current('No response from background');
             onDismissRef.current();
             return;
           }
@@ -127,8 +141,8 @@ export default function ClipOverlay({ onDismiss, onLookupResult }: ClipOverlayPr
           const resp = response as Record<string, unknown>;
 
           if (typeof resp.error === 'string') {
-            // Signal error but don't crash — just dismiss.
             console.warn('[ClipToDict] CAPTURE_AND_LOOKUP error:', resp.error);
+            onErrorRef.current(resp.error);
             onDismissRef.current();
             return;
           }

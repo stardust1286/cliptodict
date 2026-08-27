@@ -208,6 +208,10 @@ export default defineContentScript({
                     removeClipOverlay();
                     void showLookupPopup(result, false, null);
                   },
+                  onError: (message: string) => {
+                    popupPosition = { x: window.innerWidth / 2 - 160, y: window.innerHeight / 2 };
+                    void showLookupPopup(null, false, message);
+                  },
                 }),
               );
               return root;
