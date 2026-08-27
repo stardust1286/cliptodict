@@ -56,13 +56,12 @@ const PROVIDERS: Record<Provider, ProviderConfig> = {
   google: {
     base: 'https://generativelanguage.googleapis.com/v1beta/openai',
     models: [
-      // Gemini 2.5 Flash — best balance of speed and quality
+      // Gemini 3.6 Flash — current fastest/most available model
+      { id: 'gemini-3.6-flash',      can: ['text', 'vision'] },
+      // Gemini 2.5 Flash — still available, good quality fallback
       { id: 'gemini-2.5-flash',      can: ['text', 'vision'] },
-      { id: 'gemini-2.5-flash-lite', can: ['text', 'vision'] },
-      // Gemini 2.0 Flash — stable fallback
-      { id: 'gemini-2.0-flash',      can: ['text', 'vision'] },
-      // Gemini 1.5 Flash — widest availability fallback
-      { id: 'gemini-1.5-flash',      can: ['text', 'vision'] },
+      // Gemini 3.5 Flash Lite — lightweight stable fallback
+      { id: 'gemini-3.5-flash-lite', can: ['text', 'vision'] },
     ],
   },
   openrouter: {
