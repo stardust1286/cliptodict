@@ -39,6 +39,14 @@ async function resolveJMdictUrl(): Promise<string> {
   const res = await fetch(JMDICT_RELEASES_API, {
     headers: { Accept: 'application/vnd.github+json' },
   });
+  if (res.status === 403 || res.status === 429) {
+    // GitHub's anonymous API rate limit is 60 requests/hour per IP. Shared
+    // IPs (school/office NAT) or repeated retries can exhaust it quickly.
+    throw new Error(
+      'GitHub is temporarily rate-limiting dictionary downloads from your network. ' +
+      'Please wait about an hour and try again.',
+    );
+  }
   if (!res.ok) {
     throw new Error(`GitHub API returned HTTP ${res.status}`);
   }

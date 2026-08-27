@@ -34,6 +34,36 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+describe('downloadAndParseJMdict — GitHub API rate limiting', () => {
+  it('throws a clear rate-limit message on a 403 from the Releases API', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        headers: { get: () => null },
+        json: () => Promise.resolve({}),
+      }),
+    );
+
+    await expect(downloadAndParseJMdict()).rejects.toThrow(/rate-limiting/i);
+  });
+
+  it('throws a clear rate-limit message on a 429 from the Releases API', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValueOnce({
+        ok: false,
+        status: 429,
+        headers: { get: () => null },
+        json: () => Promise.resolve({}),
+      }),
+    );
+
+    await expect(downloadAndParseJMdict()).rejects.toThrow(/rate-limiting/i);
+  });
+});
+
 describe('downloadAndParseJMdict — malformed entry handling', () => {
   it('parses well-formed entries normally', async () => {
     const raw = {
