@@ -81,9 +81,15 @@ export default function App() {
 
   // Load initial status and subscribe to changes
   useEffect(() => {
-    getInstallStatus().then(setInstallStatusState);
+    let cancelled = false;
+    getInstallStatus().then((status) => {
+      if (!cancelled) setInstallStatusState(status);
+    });
     const unsubscribe = onInstallStatusChange(setInstallStatusState);
-    return unsubscribe;
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, []);
 
   function handleRetry() {
