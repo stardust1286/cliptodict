@@ -64,7 +64,10 @@ async function lookupWordPath(text: string, apiKey?: string): Promise<LookupResu
 
   // Phase 1: the dictionary reading gates phase 2, so resolve it first.
   const [dictEntry, jlptLevel] = await Promise.all([
-    lookupWord(text).catch(() => null),
+    lookupWord(text).catch((err: unknown) => {
+      console.error('[ClipToDict] lookupWord failed (treating as not found):', err);
+      return null;
+    }),
     Promise.resolve(lookupJlpt(text)),
   ]);
 
@@ -73,7 +76,10 @@ async function lookupWordPath(text: string, apiKey?: string): Promise<LookupResu
   // Phase 2: pitch accent (needs reading) + LLM (needs reading for best results) — parallel.
   const [pitchEntry, llmOutcome] = await Promise.all([
     dictReading
-      ? lookupPitchAccent(text, dictReading).catch(() => null)
+      ? lookupPitchAccent(text, dictReading).catch((err: unknown) => {
+          console.error('[ClipToDict] lookupPitchAccent failed (treating as not found):', err);
+          return null;
+        })
       : Promise.resolve(null),
     apiKey
       ? settleLlm(getLlmWordData(text, dictReading ?? '', apiKey))
@@ -122,12 +128,21 @@ async function scanDictInSentence(text: string): Promise<JMdictEntry[]> {
 
   const seen = new Set<string>();
   const results: JMdictEntry[] = [];
+  let loggedFailure = false;
 
   for (let i = 0; i < text.length; i++) {
     for (let len = Math.min(MAX_WORD_LEN, text.length - i); len >= 1; len--) {
       const candidate = text.slice(i, i + len);
       if (seen.has(candidate)) break;
-      const entry = await lookupWord(candidate).catch(() => null);
+      const entry = await lookupWord(candidate).catch((err: unknown) => {
+        // Log once per scan (not per candidate) so a broken IndexedDB
+        // connection doesn't flood the console with ~100+ identical errors.
+        if (!loggedFailure) {
+          loggedFailure = true;
+          console.error('[ClipToDict] scanDictInSentence: lookupWord failed:', err);
+        }
+        return null;
+      });
       if (entry) {
         seen.add(candidate);
         results.push(entry);

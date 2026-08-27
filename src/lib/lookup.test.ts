@@ -108,6 +108,34 @@ describe('lookup — word path', () => {
     expect(mockGetLlmWord).toHaveBeenCalledWith('食べる', '', 'gsk_test');
   });
 
+  it('treats a rejected lookupWord the same as not-found, but logs the error', async () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    mockLookupWord.mockRejectedValue(new Error('IndexedDB blocked'));
+
+    const result = await lookup('食べる', 'gsk_test');
+
+    expect(result.reading).toBeUndefined();
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('lookupWord failed'),
+      expect.any(Error),
+    );
+    consoleErrorSpy.mockRestore();
+  });
+
+  it('treats a rejected lookupPitchAccent the same as not-found, but logs the error', async () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    mockLookupPitch.mockRejectedValue(new Error('IndexedDB blocked'));
+
+    const result = await lookup('食べる', 'gsk_test');
+
+    expect(result.pitchAccent).toBeUndefined();
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('lookupPitchAccent failed'),
+      expect.any(Error),
+    );
+    consoleErrorSpy.mockRestore();
+  });
+
   it('includes source: full when LLM succeeds', async () => {
     const result = await lookup('食べる', 'gsk_test');
     expect(result.source).toBe('full');
