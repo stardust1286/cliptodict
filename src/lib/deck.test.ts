@@ -66,4 +66,31 @@ describe('exportCsv', () => {
     const row = exportCsv([card]).split('\r\n')[1];
     expect(row).toContain('一些=文字');
   });
+
+  describe('flattened sub-field escaping', () => {
+    it('escapes a literal colon inside a conjugation value so it is not mistaken for the form:value delimiter', () => {
+      const card = { ...WORD_CARD, conjugations: { note: 'e.g.: something' } };
+      const row = exportCsv([card]).split('\r\n')[1];
+      expect(row).toContain('note:e.g.\\: something');
+    });
+
+    it('escapes a literal pipe inside an example sentence so it is not mistaken for the record delimiter', () => {
+      const card = {
+        ...WORD_CARD,
+        exampleSentences: [{ jp: 'A|B', zh: 'C|D' }],
+      };
+      const row = exportCsv([card]).split('\r\n')[1];
+      expect(row).toContain('A\\|B / C\\|D');
+    });
+
+    it('escapes a literal pipe and colon inside key vocabulary', () => {
+      const card = {
+        ...WORD_CARD,
+        type: 'sentence' as const,
+        keyVocabulary: [{ word: 'a:b', zhMeaning: 'c|d' }],
+      };
+      const row = exportCsv([card]).split('\r\n')[1];
+      expect(row).toContain('a\\:b:c\\|d');
+    });
+  });
 });

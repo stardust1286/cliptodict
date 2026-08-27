@@ -131,24 +131,34 @@ function formatPitch(pitch: number | undefined): string {
   return pitch === undefined ? '' : String(pitch);
 }
 
+// formatConjugations/formatExamples/formatKeyVocab flatten structured data
+// into a single CSV cell using `|` and `:` as ad hoc delimiters. Values here
+// come from LLM output and can plausibly contain a literal `|` or `:`
+// (e.g. an English gloss with a colon), which would otherwise make the
+// flattened cell ambiguous to parse back apart. Escaping them keeps the
+// format unambiguous even though the CSV is normally just human-read.
+function escapeFlatValue(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/:/g, '\\:');
+}
+
 /** Conjugations map → "form:value|form:value". */
 function formatConjugations(conjugations: Record<string, string> | undefined): string {
   if (!conjugations) return '';
   return Object.entries(conjugations)
-    .map(([form, value]) => `${form}:${value}`)
+    .map(([form, value]) => `${escapeFlatValue(form)}:${escapeFlatValue(value)}`)
     .join('|');
 }
 
 /** Example sentences → "jp / zh|jp / zh". */
 function formatExamples(examples: Array<{ jp: string; zh: string }> | undefined): string {
   if (!examples) return '';
-  return examples.map((ex) => `${ex.jp} / ${ex.zh}`).join('|');
+  return examples.map((ex) => `${escapeFlatValue(ex.jp)} / ${escapeFlatValue(ex.zh)}`).join('|');
 }
 
 /** Key vocabulary → "word:zhMeaning|word:zhMeaning". */
 function formatKeyVocab(vocab: Array<{ word: string; zhMeaning: string }> | undefined): string {
   if (!vocab) return '';
-  return vocab.map((v) => `${v.word}:${v.zhMeaning}`).join('|');
+  return vocab.map((v) => `${escapeFlatValue(v.word)}:${escapeFlatValue(v.zhMeaning)}`).join('|');
 }
 
 /**
