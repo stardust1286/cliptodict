@@ -231,10 +231,22 @@ export async function downloadAndParseJMdict(
   const raw = JSON.parse(jsonText) as JMdictRaw;
 
   const entries: JMdictEntry[] = [];
+  let skipped = 0;
   for (const word of raw.words) {
-    entries.push(...parseWord(word));
+    // Guard against any single word entry not matching the expected shape
+    // (e.g. an upstream field rename/removal) so it doesn't abort the whole
+    // install — skip that entry and keep going.
+    try {
+      entries.push(...parseWord(word));
+    } catch (err) {
+      skipped++;
+      console.warn(`[ClipToDict] Skipping malformed JMdict entry (id: ${word?.id ?? 'unknown'}):`, err);
+    }
   }
 
+  if (skipped > 0) {
+    console.warn(`[ClipToDict] Skipped ${skipped} malformed JMdict entries out of ${raw.words.length}.`);
+  }
   console.log(`[ClipToDict] Parsed ${entries.length} JMdict entries`);
   return { entries };
 }
