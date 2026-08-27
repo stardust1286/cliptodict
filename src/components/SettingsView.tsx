@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { detectProvider } from '../lib/llm';
 import { clearAllCards } from '../lib/deck';
 
@@ -16,20 +16,39 @@ export default function SettingsView() {
   const [apiKey, setApiKey] = useState('');
   const [savedFeedback, setSavedFeedback] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
+  const savedFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
     chrome.storage.local.get('apiKey', (result: Record<string, unknown>) => {
+      if (cancelled) return;
       const stored = result['apiKey'];
       if (typeof stored === 'string') {
         setApiKey(stored);
       }
     });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Clear the "Saved ✓" revert timer on unmount so it doesn't fire a state
+  // update after the popup has closed.
+  useEffect(() => {
+    return () => {
+      if (savedFeedbackTimerRef.current !== null) {
+        clearTimeout(savedFeedbackTimerRef.current);
+      }
+    };
   }, []);
 
   const handleSave = useCallback(() => {
     chrome.storage.local.set({ apiKey }, () => {
       setSavedFeedback(true);
-      setTimeout(() => setSavedFeedback(false), 1500);
+      if (savedFeedbackTimerRef.current !== null) {
+        clearTimeout(savedFeedbackTimerRef.current);
+      }
+      savedFeedbackTimerRef.current = setTimeout(() => setSavedFeedback(false), 1500);
     });
   }, [apiKey]);
 
