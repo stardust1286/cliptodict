@@ -1,3 +1,129 @@
+# Round 6 (2026-08-28) — code review sweep: security/correctness fixes + Gemini registry drift
+
+Investigation started from a full design/security review of the codebase (21
+findings across high/medium/low severity), followed by manual browser testing
+of the built extension. 18 of the 21 review findings were fixed (logic/safety
+class only — UI-timing and product-decision items were deliberately deferred,
+see below); manual testing then surfaced one additional live bug not caught
+by the review. 19 commits total, each independently revertable. Test suite
+grew from 58 to 91 cases across 5 new test files
+(`install.test.ts`, `jmdict-parser.test.ts`, `install-status.test.ts`,
+`lookup-llm.test.ts`, plus expansions to `deck.test.ts`/`llm.test.ts`/`lookup.test.ts`).
+
+## Fixed in this round
+
+**High severity**
+- `wxt.config.ts`: dropped the standalone `tabs` permission — everything
+  (`captureVisibleTab`, `tabs.query`/`sendMessage` to the active tab) is
+  covered by `activeTab` since every call site is gated behind a user
+  gesture. Manually verified: screen-clip still works after the change.
+- `src/lib/dict/install.ts`: `installDictionary()` could be invoked
+  concurrently by `onInstalled` and the startup resume check, both racing
+  past the idempotency check before either had written records (TOCTOU) —
+  duplicating the full download/parse/insert. Added a module-level in-flight
+  promise lock (mirrors `db.ts`'s `_dictDbPromise` pattern). Also made the
+  two install steps independently resumable — a worker killed after JMdict
+  finishes no longer redownloads it on resume; each step now checks its own
+  store's count. **This directly resolves "Open" item #7 from Round 2 below.**
+
+**Medium severity**
+- `entrypoints/background.ts`: unrecognized message types now `return false`
+  instead of `return true` with no `sendResponse` — the old code left the
+  sender's callback hanging forever on any unmatched message type.
+- `entrypoints/content.ts` / `ClipOverlay.tsx`: entering clip mode
+  (`ACTIVATE_CLIP_MODE`) now dismisses the selection button and lookup popup
+  first, not just a prior clip overlay — the three floating UIs share
+  z-index ordering and could visually collide.
+- `ClipOverlay.tsx`: every `CAPTURE_AND_LOOKUP` error (no-api-key,
+  auth/rate-limit/timeout, OCR failure) is now routed through the same
+  `LookupPopup` error UI the text-selection path already has, via a new
+  `onError` callback — previously all errors were `console.warn`'d and the
+  overlay silently vanished with zero user feedback. **Manually verified**:
+  clearing the API key and screen-clipping now shows "Add an API key in the
+  extension popup to enable translations."
+- `entrypoints/popup/App.tsx`: guarded the initial `getInstallStatus()`
+  promise against firing `setInstallStatusState` after unmount.
+- `src/lib/llm.ts`: a 5xx from a provider is now logged and treated
+  distinctly from a 4xx "model deprecated" error; the final
+  exhausted-fallback message says "experiencing an outage" instead of the
+  generic "update the extension" message when every failure was a 5xx.
+- `src/lib/lookup.ts`: `lookupWord`/`lookupPitchAccent` failures (as opposed
+  to genuine not-found) are now logged via `console.error` instead of being
+  silently mapped to `null` identically to "word not in dictionary".
+- `src/lib/dict/jmdict-parser.ts`: a single malformed JMdict word entry (e.g.
+  from an upstream schema change) is now skipped with a warning instead of
+  throwing and aborting the entire ~200k-entry install.
+- `src/lib/deck.ts`: `getCards()` sort switched from `localeCompare` to a
+  plain ordinal string comparison — `savedAt` is a fixed-format ISO
+  timestamp, not user-facing text, so locale-aware collation was the wrong
+  tool.
+- `src/lib/install-status.ts`: both `getInstallStatus`/`setInstallStatus` now
+  check `chrome.runtime.lastError` and log on failure instead of silently
+  treating a storage error as `{phase: 'idle'}` or a no-op success.
+
+**Low severity**
+- `src/lib/deck.ts`: CSV export now neutralizes formula-injection prefixes
+  (`=`, `+`, `-`, `@`, tab, CR) with a leading single quote — card fields
+  come from LLM output / user-selected webpage text, both untrusted.
+- `src/lib/lookup.ts`: `scanDictInSentence`'s per-position candidate lookups
+  are now issued via `Promise.all` instead of serially awaited — up to ~140
+  sequential IndexedDB round-trips for a 24-char sentence became parallel
+  per-position batches. Longest-match-wins semantics preserved (locked down
+  with a new test).
+- `src/lib/lookup-llm.ts`: both LLM prompts now wrap the interpolated
+  user-selected text in explicit `"""..."""` delimiters plus an instruction
+  to treat it strictly as data, not instructions — a defensive measure
+  against prompt injection from webpage text.
+- `src/lib/dict/jmdict-parser.ts`: a 403/429 from the GitHub Releases API now
+  surfaces a specific "GitHub is temporarily rate-limiting..." message
+  instead of a bare "GitHub API returned HTTP 403".
+- `LookupPopup.tsx`: the spinner's `@keyframes` rule is now rendered as a
+  React `<style>` child (scoped to the shadow root) instead of being
+  injected into the host page's `document.head` — the old approach leaked
+  an extension implementation detail into page DOM.
+- `SettingsView.tsx`: the "Saved ✓" revert `setTimeout` and the initial
+  `chrome.storage.local.get` are both now cleaned up / guarded on unmount.
+- `src/lib/deck.ts`: `formatConjugations`/`formatExamples`/`formatKeyVocab`
+  now backslash-escape literal `|`/`:` inside sub-field values, so an LLM
+  output containing one of those characters doesn't corrupt the flattened
+  CSV cell's delimiter structure.
+
+**Deliberately deferred (product-decision / needs-visual-confirmation class,
+not fixed in this round):**
+- Screen-clip overlay is still visible during `captureVisibleTab` (this is
+  Round 2's Open item #5 below — still open; needs the content script to
+  hide the overlay, wait a frame, then signal capture).
+- `isSentence()` heuristic accuracy tuning.
+- `saveCard` duplicate-save prevention.
+- `image-crop.ts` bounds-checking behavior (throw vs. silently clip).
+
+## Bug discovered during manual testing (not from the code review)
+
+**Bug I — Google's Gemini model registry was 75% deprecated**
+
+Manual translation testing on the sentence "介護士さんのお話によると" consistently
+timed out with *"The AI service took too long to respond"*, while longer
+sentences containing the same content translated fine — a counterintuitive
+direction (shorter input failing, longer succeeding) that ruled out a
+prompt-size or dict-scan-performance explanation.
+
+Root cause, confirmed via the service worker console (visible only because
+of this round's newly-added per-model `console.warn` logging in
+`fetchWithFallback` — see `llm.ts` fix above): of the 4 models registered for
+Google in `llm.ts`, 3 were returning 404 (`gemini-2.5-flash-lite`,
+`gemini-2.0-flash`, `gemini-1.5-flash` — all retired, per Google's own error
+messages pointing to `gemini-3.5-flash-lite`/`gemini-3.6-flash`). Only
+`gemini-2.5-flash` was still live, so any request where that one model
+happened to be slow hit the 10s timeout and then burned through three
+guaranteed-404 fallbacks before surfacing an error.
+
+**Fix:** registry now leads with `gemini-3.6-flash`, keeps `gemini-2.5-flash`
+as a still-working fallback, and swaps in `gemini-3.5-flash-lite` for the
+retired lite model. **Manually verified**: the same sentence now translates
+successfully ("根据护理员所说...").
+
+---
+
 # ClipToDict — Bug Report (debugging round 2026-06-27)
 
 Investigation started from the symptom: *"shows nothing when I underline Japanese
@@ -257,8 +383,6 @@ Tatoeba is slow. Example sentences are still awaited and included.
    out-of-JMdict inputs containing conjugation markers (される / ています / etc.)
    to the sentence path.
 
-7. **Dictionary install can run twice concurrently on first install.**
-   `background.ts` calls `installDictionary()` from both `onInstalled` and the
-   service-worker-startup check; on a fresh install both see empty stores and both
-   download. Data integrity is fine (keyed `put` overwrites) but bandwidth/CPU is
-   wasted. Consider a single in-flight guard.
+7. ~~**Dictionary install can run twice concurrently on first install.**~~
+   **Fixed in Round 6** — `installDictionary()` now uses a module-level
+   in-flight promise lock, and each install step is independently resumable.
