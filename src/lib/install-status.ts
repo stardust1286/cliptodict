@@ -27,6 +27,11 @@ const STORAGE_KEY = 'dictInstallStatus';
 export async function getInstallStatus(): Promise<InstallStatus> {
   return new Promise((resolve) => {
     chrome.storage.local.get(STORAGE_KEY, (result) => {
+      if (chrome.runtime.lastError) {
+        console.error('[ClipToDict] getInstallStatus failed:', chrome.runtime.lastError.message);
+        resolve({ phase: 'idle' });
+        return;
+      }
       resolve((result[STORAGE_KEY] as InstallStatus) ?? { phase: 'idle' });
     });
   });
@@ -34,7 +39,12 @@ export async function getInstallStatus(): Promise<InstallStatus> {
 
 export async function setInstallStatus(status: InstallStatus): Promise<void> {
   return new Promise((resolve) => {
-    chrome.storage.local.set({ [STORAGE_KEY]: status }, resolve);
+    chrome.storage.local.set({ [STORAGE_KEY]: status }, () => {
+      if (chrome.runtime.lastError) {
+        console.error('[ClipToDict] setInstallStatus failed:', chrome.runtime.lastError.message);
+      }
+      resolve();
+    });
   });
 }
 
