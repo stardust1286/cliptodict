@@ -4,8 +4,11 @@
  *   2. Download kanjium accents.txt → parse → bulk-insert into IndexedDB
  *
  * Progress is reported via chrome.storage.local so the popup can display it.
- * The routine is idempotent: if both stores are already populated it returns
- * immediately without re-downloading.
+ * Each step is independently idempotent/resumable: if a store is already
+ * populated its step is skipped, so a worker killed after step 1 completes
+ * won't redownload it on the next call. Concurrent calls to
+ * installDictionary() (e.g. onInstalled firing alongside the startup resume
+ * check) share the same in-flight promise instead of racing.
  */
 
 import {
@@ -39,49 +42,73 @@ async function bulkInsertChunked(
   }
 }
 
-export async function installDictionary(): Promise<void> {
-  const db = await openDictDb();
+// Guards against onInstalled and the service-worker-startup resume check both
+// firing installDictionary() concurrently — without this, both would pass the
+// idempotency check before either has written any records (TOCTOU), doubling
+// the download/parse/insert work and racing their setInstallStatus writes.
+let _installPromise: Promise<void> | null = null;
 
-  // ── Idempotency check ──────────────────────────────────────────────────────
-  const [jmCount, pitchCount] = await Promise.all([
-    dbCount(db, STORE_JMDICT),
-    dbCount(db, STORE_PITCH),
-  ]);
+export function installDictionary(): Promise<void> {
+  if (_installPromise) return _installPromise;
+  _installPromise = runInstall().finally(() => {
+    _installPromise = null;
+  });
+  return _installPromise;
+}
 
-  if (jmCount > 0 && pitchCount > 0) {
-    console.log('[ClipToDict] Dictionary already installed, skipping download.');
-    await setInstallStatus({ phase: 'done' });
-    return;
-  }
-
+async function runInstall(): Promise<void> {
   try {
+    const db = await openDictDb();
+
+    // ── Per-step idempotency check ─────────────────────────────────────────
+    // Checked independently so a worker killed between steps only redoes the
+    // step that didn't finish, rather than re-downloading everything.
+    const [jmCount, pitchCount] = await Promise.all([
+      dbCount(db, STORE_JMDICT),
+      dbCount(db, STORE_PITCH),
+    ]);
+
+    if (jmCount > 0 && pitchCount > 0) {
+      console.log('[ClipToDict] Dictionary already installed, skipping download.');
+      await setInstallStatus({ phase: 'done' });
+      return;
+    }
+
     // ── Step 1: JMdict ───────────────────────────────────────────────────────
-    await setInstallStatus({ phase: 'downloading-jmdict', progress: 0 });
+    if (jmCount > 0) {
+      console.log('[ClipToDict] JMdict already indexed, skipping.');
+    } else {
+      await setInstallStatus({ phase: 'downloading-jmdict', progress: 0 });
 
-    const { entries: jmEntries } = await downloadAndParseJMdict((pct) => {
-      setInstallStatus({ phase: 'downloading-jmdict', progress: pct });
-    });
+      const { entries: jmEntries } = await downloadAndParseJMdict((pct) => {
+        setInstallStatus({ phase: 'downloading-jmdict', progress: pct });
+      });
 
-    await setInstallStatus({ phase: 'indexing-jmdict', progress: 0 });
-    await bulkInsertChunked(db, STORE_JMDICT, jmEntries, (pct) => {
-      setInstallStatus({ phase: 'indexing-jmdict', progress: pct });
-    });
+      await setInstallStatus({ phase: 'indexing-jmdict', progress: 0 });
+      await bulkInsertChunked(db, STORE_JMDICT, jmEntries, (pct) => {
+        setInstallStatus({ phase: 'indexing-jmdict', progress: pct });
+      });
 
-    console.log(`[ClipToDict] Indexed ${jmEntries.length} JMdict entries.`);
+      console.log(`[ClipToDict] Indexed ${jmEntries.length} JMdict entries.`);
+    }
 
     // ── Step 2: Kanjium pitch accent ─────────────────────────────────────────
-    await setInstallStatus({ phase: 'downloading-pitch', progress: 0 });
+    if (pitchCount > 0) {
+      console.log('[ClipToDict] Pitch accent already indexed, skipping.');
+    } else {
+      await setInstallStatus({ phase: 'downloading-pitch', progress: 0 });
 
-    const pitchEntries = await downloadAndParsePitchAccent((pct) => {
-      setInstallStatus({ phase: 'downloading-pitch', progress: pct });
-    });
+      const pitchEntries = await downloadAndParsePitchAccent((pct) => {
+        setInstallStatus({ phase: 'downloading-pitch', progress: pct });
+      });
 
-    await setInstallStatus({ phase: 'indexing-pitch', progress: 0 });
-    await bulkInsertChunked(db, STORE_PITCH, pitchEntries, (pct) => {
-      setInstallStatus({ phase: 'indexing-pitch', progress: pct });
-    });
+      await setInstallStatus({ phase: 'indexing-pitch', progress: 0 });
+      await bulkInsertChunked(db, STORE_PITCH, pitchEntries, (pct) => {
+        setInstallStatus({ phase: 'indexing-pitch', progress: pct });
+      });
 
-    console.log(`[ClipToDict] Indexed ${pitchEntries.length} pitch accent entries.`);
+      console.log(`[ClipToDict] Indexed ${pitchEntries.length} pitch accent entries.`);
+    }
 
     await setInstallStatus({ phase: 'done' });
     console.log('[ClipToDict] Dictionary install complete.');
