@@ -87,30 +87,24 @@ const StatusNote: React.FC<{ llmError?: string }> = ({ llmError }) =>
     </p>
   );
 
+// Rendered as a JSX sibling (not injected into document.head) so the
+// @keyframes rule stays scoped inside the shadow root instead of leaking
+// into the host page's DOM.
 const Spinner: React.FC = () => (
-  <div
-    style={{
-      width: '20px',
-      height: '20px',
-      border: '2px solid #e5e7eb',
-      borderTopColor: '#4f46e5',
-      borderRadius: '50%',
-      animation: 'cliptodict-spin 0.7s linear infinite',
-    }}
-  />
+  <>
+    <style>{'@keyframes cliptodict-spin { to { transform: rotate(360deg); } }'}</style>
+    <div
+      style={{
+        width: '20px',
+        height: '20px',
+        border: '2px solid #e5e7eb',
+        borderTopColor: '#4f46e5',
+        borderRadius: '50%',
+        animation: 'cliptodict-spin 0.7s linear infinite',
+      }}
+    />
+  </>
 );
-
-// Inject keyframe animation once
-function ensureSpinnerAnimation(): void {
-  const id = 'cliptodict-spinner-style';
-  if (typeof document !== 'undefined' && !document.getElementById(id)) {
-    const style = document.createElement('style');
-    style.id = id;
-    style.textContent =
-      '@keyframes cliptodict-spin { to { transform: rotate(360deg); } }';
-    document.head.appendChild(style);
-  }
-}
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
@@ -128,10 +122,6 @@ const LookupPopup: React.FC<LookupPopupProps> = ({
 
   // Clamp position to viewport
   const [clampedPos, setClampedPos] = useState(position);
-
-  useEffect(() => {
-    ensureSpinnerAnimation();
-  }, []);
 
   useEffect(() => {
     setConjugationsOpen(false);
