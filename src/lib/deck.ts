@@ -72,7 +72,10 @@ export async function getCards(): Promise<VocabularyCard[]> {
     req.onerror = () => reject(req.error);
   });
 
-  return cards.sort((a, b) => b.savedAt.localeCompare(a.savedAt));
+  // Plain ordinal comparison, not localeCompare: savedAt is a fixed-format
+  // ISO 8601 timestamp, not user-facing text, and locale-aware collation
+  // isn't guaranteed to sort it as a pure ordinal/date comparison would.
+  return cards.sort((a, b) => (a.savedAt < b.savedAt ? 1 : a.savedAt > b.savedAt ? -1 : 0));
 }
 
 /** Deletes a card by id. */
