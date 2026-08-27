@@ -49,4 +49,21 @@ describe('exportCsv', () => {
     const row = exportCsv([card]).split('\r\n')[1];
     expect(row).toContain('"吃,食用"');
   });
+
+  it.each(['=1+1', '+cmd|calc', '-2+3', '@SUM(A1:A2)'])(
+    'neutralizes formula-injection prefix %s with a leading single quote',
+    (value) => {
+      const card = { ...WORD_CARD, zhTranslation: value };
+      const row = exportCsv([card]).split('\r\n')[1];
+      expect(row).toContain(`'${value}`);
+      // The raw formula-looking value must never appear unescaped.
+      expect(row).not.toMatch(new RegExp(`,${value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')},`));
+    },
+  );
+
+  it('does not alter fields that do not start with a formula-trigger character', () => {
+    const card = { ...WORD_CARD, zhTranslation: '一些=文字' };
+    const row = exportCsv([card]).split('\r\n')[1];
+    expect(row).toContain('一些=文字');
+  });
 });

@@ -101,10 +101,22 @@ export async function clearAllCards(): Promise<void> {
 
 // ─── CSV Export ───────────────────────────────────────────────────────────────
 
+// Leading characters that Excel/Google Sheets interpret as the start of a
+// formula. Fields are LLM output or user-selected webpage text — both
+// untrusted — so a value like "=HYPERLINK(...)" must not execute on open.
+const FORMULA_PREFIXES = ['=', '+', '-', '@', '\t', '\r'];
+
 /** RFC 4180 CSV escaping: wrap in quotes if the field contains commas, quotes, or newlines. */
 function escapeField(value: string | undefined | null): string {
   if (value === undefined || value === null) return '';
-  const str = String(value);
+  let str = String(value);
+
+  // Neutralize formula injection by prefixing a single quote, which
+  // spreadsheet apps render literally instead of treating as a formula.
+  if (FORMULA_PREFIXES.some((prefix) => str.startsWith(prefix))) {
+    str = "'" + str;
+  }
+
   if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
     return '"' + str.replace(/"/g, '""') + '"';
   }
