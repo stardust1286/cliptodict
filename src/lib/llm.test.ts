@@ -148,6 +148,33 @@ describe('model fallback', () => {
     }));
     await expect(callLLM('AIzaSyTest', 'hello')).rejects.toThrow(/update/i);
   });
+
+  it('retries the next model on a 500, rather than treating it as this model being deprecated', async () => {
+    mockFetchSequence([
+      { status: 500, body: { error: 'internal server error' } },
+      { status: 200, body: OK_RESPONSE },
+    ]);
+    const result = await callLLM('AIzaSyTest', 'hello');
+    expect(result).toBe('result text');
+    expect((fetch as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(2);
+  });
+
+  it('reports a distinct outage message when every model returns 5xx', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false, status: 503,
+      json: () => Promise.resolve({ error: 'service unavailable' }),
+      text: () => Promise.resolve('service unavailable'),
+    }));
+    await expect(callLLM('AIzaSyTest', 'hello')).rejects.toThrow(/outage/i);
+  });
+
+  it('prioritizes the outage message over the generic one when both 4xx and 5xx occurred', async () => {
+    mockFetchSequence([
+      { status: 404, body: { error: 'gone' } },
+      { status: 503, body: { error: 'unavailable' } },
+    ]);
+    await expect(callLLM('AIzaSyTest', 'hello')).rejects.toThrow(/outage/i);
+  });
 });
 
 // ─── Hard stops — no retry ────────────────────────────────────────────────────

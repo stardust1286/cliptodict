@@ -95,9 +95,13 @@ export function detectProvider(apiKey: string): Provider | null {
 // ─── Error types (messages written for end users) ─────────────────────────────
 
 export class LlmError extends Error {
-  constructor(message: string) {
+  /** HTTP status that caused this error, when known (absent for network/parse errors). */
+  readonly status?: number;
+
+  constructor(message: string, status?: number) {
     super(message);
     this.name = 'LlmError';
+    this.status = status;
   }
 }
 
@@ -183,7 +187,7 @@ async function fetchCompletion(
   if (response.status === 429) throw new LlmRateLimitError();
   if (!response.ok) {
     const body = await response.text().catch(() => '');
-    throw new LlmError(`AI service error (${response.status}): ${body.slice(0, 200)}`);
+    throw new LlmError(`AI service error (${response.status}): ${body.slice(0, 200)}`, response.status);
   }
 
   const data = await response.json() as {
@@ -204,6 +208,7 @@ async function fetchWithFallback(
   extraHeaders: Record<string, string> = {},
 ): Promise<string> {
   let timedOut = false;
+  let sawServerOutage = false;
 
   for (const model of models) {
     try {
@@ -220,14 +225,32 @@ async function fetchWithFallback(
       // fall through to the next model instead of hard-stopping.
       if (err instanceof LlmTimeoutError) {
         timedOut = true;
+        console.warn(`[ClipToDict] Model ${model} timed out, trying next model.`);
+        continue;
+      }
+      // A 5xx is the provider's whole service having trouble, not this specific
+      // model being deprecated (unlike a 400/404/422) — still worth trying the
+      // next model in case only one backend is affected, but log it distinctly
+      // so an outage doesn't read the same as "model list needs updating".
+      if (err instanceof LlmError && err.status !== undefined && err.status >= 500) {
+        sawServerOutage = true;
+        console.warn(`[ClipToDict] Model ${model} returned server error ${err.status}, trying next model.`);
         continue;
       }
       // Model-level error (400/404/422) — try the next model.
+      console.warn(
+        `[ClipToDict] Model ${model} unavailable (${err instanceof Error ? err.message : String(err)}), trying next model.`,
+      );
     }
   }
 
   // Exhausted every model. Surface the most informative reason.
   if (timedOut) throw new LlmTimeoutError();
+  if (sawServerOutage) {
+    throw new LlmError(
+      'The AI service is currently experiencing an outage. Please try again in a few minutes.',
+    );
+  }
   throw new LlmError(
     'All AI models are currently unavailable. ' +
     'Please try again later, or update the extension to get the latest model list.',
